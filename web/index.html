@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Position Combo</title>
+    <style>
+        :root { --cell-size: 50px; --grid-gap: 4px; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; display: flex; flex-direction: column; align-items: center; margin: 0; background-color: #f0f2f5; padding-top: 20px; transition: background-color 0.5s; }
+        h1, h3 { margin: 0 0 15px 0; }
+        #main-container { display: flex; gap: 30px; align-items: flex-start; }
+        .grid-container { display: grid; grid-template-columns: repeat(5, var(--cell-size)); gap: var(--grid-gap); border: 2px solid #333; padding: var(--grid-gap); background-color: #ddd; }
+        .cell { width: var(--cell-size); height: var(--cell-size); display: flex; justify-content: center; align-items: center; font-size: 1.5em; font-weight: bold; background-color: #fff; user-select: none; transition: background-color 0.2s, transform 0.2s; border: 1px solid #ccc; }
+        #player-board .cell:not(.filled) { cursor: pointer; }
+        #player-board .cell:not(.filled):hover { background-color: #e9f5ff; }
+        #attack-board .cell { cursor: pointer; }
+        #attack-board .cell.selected { background-color: #a7d7f9; transform: scale(0.9); }
+        #info-panel { width: 280px; }
+        .player-info { padding: 15px; border: 1px solid #ccc; border-radius: 8px; background-color: #fff; margin-bottom: 10px; }
+        .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background-color: #ccc; margin-left: 8px; transition: background-color 0.5s; }
+        .status-dot.ready { background-color: #28a745; }
+        #status { margin-top: 20px; font-size: 1.2em; font-weight: bold; color: #333; text-align: center; min-height: 50px; }
+        #placement-section { text-align: center; padding: 15px; background: #e9ecef; border-radius: 8px; }
+        #current-number-display { font-size: 2.5em; font-weight: bold; color: #007bff; }
+        .hidden { display: none; }
+        .boards-container { display: flex; gap: 30px; }
+    </style>
+</head>
+<body>
+    <h1>Position Combo</h1>
+    <div id="main-container">
+        <div class="boards-container">
+            <div id="player-board-container">
+                <h3>My Board</h3>
+                <div id="player-board" class="grid-container"></div>
+            </div>
+            <div id="attack-board-container" class="hidden">
+                <h3>Attack Board</h3>
+                <div id="attack-board" class="grid-container"></div>
+            </div>
+        </div>
+        <div id="info-panel">
+            <div id="player1-info" class="player-info">
+                <h3>Player 1 <span id="p1-status-dot" class="status-dot"></span></h3>
+                <p>Score: <span id="player1-score">0</span></p>
+            </div>
+            <div id="player2-info" class="player-info">
+                <h3>Player 2 <span id="p2-status-dot" class="status-dot"></span></h3>
+                <p>Score: <span id="player2-score">0</span></p>
+            </div>
+            <div id="placement-section">
+                <h4>Placement Phase</h4>
+                <div id="placement-info">
+                    <p>Place this number:</p>
+                    <div id="current-number-display">-</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="status">Connecting to server...</div>
+
+    <script>
+        const ws = new WebSocket("ws://localhost:8765");
+        let myPlayerId = null;
+        let gameState = {};
+        let attackSelection = [];
+
+        const DOMElements = {
+            status: document.getElementById('status'),
+            playerBoard: document.getElementById('player-board'),
+            attackBoard: document.getElementById('attack-board'),
+            placementSection: document.getElementById('placement-section'),
+            attackBoardContainer: document.getElementById('attack-board-container'),
+            currentNumberDisplay: document.getElementById('current-number-display'),
+            playerBoardContainer: document.getElementById('player-board-container'),
+        };
+
+        ws.onopen = () => DOMElements.status.textContent = "Waiting for another player...";
+        ws.onclose = () => DOMElements.status.textContent = "Disconnected. Refresh to rejoin.";
+        ws.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
+            console.log("Received:", msg);
+            switch (msg.type) {
+                case "welcome": myPlayerId = msg.player_id; break;
+                case "new_placement_number": DOMElements.currentNumberDisplay.textContent = msg.number; break;
+                case "game_state": gameState = msg.data; updateUI(); break;
+                case "match_start": DOMElements.status.textContent = msg.message; break;
+                case "round_result": handleRoundResult(msg.data); break;
+                case "error": alert(`Error: ${msg.message}`); break;
+            }
+        };
+
+        function handlePlacementCellClick(cellEl) {
+            if (gameState.phase !== 'placement' || cellEl.classList.contains('filled') || gameState.placement_info.placements_this_step[myPlayerId]) return;
+            ws.send(JSON.stringify({ action: 'submit_placement', cell_id: cellEl.dataset.cellId }));
+        }
+
+        function handleAttackCellClick(cellEl) {
+            if (gameState.phase !== 'match' || (gameState.match_info && gameState.match_info.submissions[myPlayerId])) return;
+            
+            const cellId = cellEl.dataset.cellId;
+            const index = attackSelection.indexOf(cellId);
+
+            if (index > -1) {
+                attackSelection.splice(index, 1);
+                cellEl.classList.remove('selected');
+            } else if (attackSelection.length < 4) {
+                attackSelection.push(cellId);
+                cellEl.classList.add('selected');
+            }
+
+            if (attackSelection.length === 4) {
+                const confirmed = window.confirm(`Submit this combination?
+${attackSelection.join(', ')}`);
+                if (confirmed) {
+                    ws.send(JSON.stringify({ action: 'submit_combination', cells: attackSelection }));
+                }
+                document.querySelectorAll('#attack-board .cell.selected').forEach(c => c.classList.remove('selected'));
+                attackSelection = [];
+            }
+        }
+        
+        function handleRoundResult(data) {
+            const p1Result = data.results.find(r => r.player === 'player1');
+            const p2Result = data.results.find(r => r.player === 'player2');
+            let resultText = `<strong>Round ${gameState.match_info.round} Results:</strong><br>`;
+            resultText += `Player 1: ${p1Result.hand} (${p1Result.rank} rank). Points gained: ${p1Result.points_gained_this_round}<br>`;
+            resultText += `Player 2: ${p2Result.hand} (${p2Result.rank} rank). Points gained: ${p2Result.points_gained_this_round}<br>`;
+            DOMElements.status.innerHTML = resultText;
+        }
+
+        function updateUI() {
+            if (!myPlayerId || !gameState.phase) return;
+
+            // Phase-specific UI updates
+            if (gameState.phase === 'placement') {
+                document.body.style.backgroundColor = '#e9f5ff';
+                renderBoard(DOMElements.playerBoard, gameState.boards[myPlayerId]);
+                const placementInfo = gameState.placement_info;
+                DOMElements.status.textContent = `Placement Round ${placementInfo.step + 1}/25. Place: ${placementInfo.current_number}`;
+                if (placementInfo.placements_this_step[myPlayerId]) {
+                    DOMElements.status.textContent = 'Waiting for opponent to place...';
+                }
+            } else if (gameState.phase === 'match') {
+                document.body.style.backgroundColor = '#f0f2f5';
+                DOMElements.placementSection.classList.add('hidden');
+                DOMElements.attackBoardContainer.classList.remove('hidden');
+                DOMElements.playerBoardContainer.classList.add('hidden'); // Hide own board after placement
+
+                const matchInfo = gameState.match_info;
+                // Don't overwrite a round result immediately
+                if (!DOMElements.status.innerHTML.includes('Round')) {
+                    if (gameState.game_over) {
+                        DOMElements.status.innerHTML = `<strong>Game Over!</strong><br>${gameState.winner === 'draw' ? "It's a draw!" : `${gameState.winner} wins!`}`;
+                    } else {
+                        DOMElements.status.textContent = `Match Round ${matchInfo.round + 1}/${matchInfo.total_rounds}. Choose your combination.`;
+                        if (matchInfo.submissions[myPlayerId]) {
+                            DOMElements.status.textContent = 'Combination submitted. Waiting for opponent...';
+                        }
+                    }
+                }
+            }
+            
+            // Generic updates
+            ['player1', 'player2'].forEach(pId => {
+                document.getElementById(`${pId}-score`).textContent = gameState.players[pId].score;
+                const dot = document.getElementById(`${pId === 'player1' ? 'p1' : 'p2'}-status-dot`);
+                let isReady = false;
+                if(gameState.phase === 'placement' && gameState.placement_info) isReady = gameState.placement_info.placements_this_step[pId];
+                if(gameState.phase === 'match' && gameState.match_info) isReady = gameState.match_info.submissions[pId];
+                dot.classList.toggle('ready', isReady);
+            });
+        }
+        
+        function renderBoard(boardEl, boardData) {
+            boardEl.querySelectorAll('.cell').forEach(cell => {
+                const cellId = cell.dataset.cellId;
+                if (boardData && boardData[cellId]) {
+                    cell.textContent = boardData[cellId];
+                    cell.classList.add('filled');
+                } else {
+                    cell.textContent = '';
+                    cell.classList.remove('filled');
+                }
+            });
+        }
+
+        function createGrids() {
+            const cols = 'abcde';
+            for (let r = 1; r <= 5; r++) {
+                for (const c of cols) {
+                    const cellId = `${c}${r}`;
+                    // Player's personal board (for placement)
+                    const pCell = document.createElement('div');
+                    pCell.className = 'cell';
+                    pCell.dataset.cellId = cellId;
+                    pCell.onclick = () => handlePlacementCellClick(pCell);
+                    DOMElements.playerBoard.appendChild(pCell);
+                    // Attack board
+                    const aCell = document.createElement('div');
+                    aCell.className = 'cell';
+                    aCell.dataset.cellId = cellId;
+                    aCell.onclick = () => handleAttackCellClick(aCell);
+                    DOMElements.attackBoard.appendChild(aCell);
+                }
+            }
+        }
+
+        createGrids();
+    </script>
+</body>
+</html>
