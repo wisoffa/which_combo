@@ -41,34 +41,51 @@ The game consists of two phases: a synchronized **Placement Phase** and a simult
 
 ## Running for Development
 
-You will need two terminals to run the game.
+Because the development server is not unified, you need two terminals to run the game locally. For production, this is handled by a single server process.
 
-1.  **Terminal 1: Start the Game Server**
+1.  **Terminal 1: Start the Python Backend**
     Navigate to the `which_combo` directory and run:
     ```bash
-    python3 server.py
+    python3 -m aiohttp.web -H localhost -P 8080 server:app
     ```
-    By default, this will start on `ws://localhost:8765`.
 
-2.  **Terminal 2: Start the Web Server**
-    Navigate to the `which_combo/web` directory and run:
+2.  **Play**
+    Open two browser tabs and navigate to `http://localhost:8080`. The application is now served from a single port.
+
+## Deployment to Google Cloud Run
+
+This guide explains how to deploy the game to Google Cloud Run, a fully managed, serverless platform.
+
+### Prerequisites
+1.  Install the [Google Cloud SDK](https://cloud.google.com/sdk/docs/install) (`gcloud` CLI).
+2.  Authenticate the CLI: `gcloud auth login`.
+3.  Set your project: `gcloud config set project YOUR_PROJECT_ID`.
+4.  Enable the Cloud Build and Artifact Registry APIs for your project.
+
+### Deployment Steps
+
+1.  **Build the Container Image**
+    Navigate to the `which_combo` directory. Run the following command to use Cloud Build to create your container image and push it to the Artifact Registry. Replace `YOUR_PROJECT_ID` with your actual GCP Project ID.
+
     ```bash
-    python3 -m http.server 8000
+    gcloud builds submit --tag gcr.io/YOUR_PROJECT_ID/position-combo
     ```
 
-3.  **Play**
-    Open two browser tabs and navigate to `http://localhost:8000`. The first tab will be Player 1, the second will be Player 2.
+2.  **Deploy to Cloud Run**
+    Deploy the container image to Cloud Run. This command creates a public service and enables **session affinity**, which is crucial for ensuring WebSocket connections are stable.
 
-## Configuration (Environment Variables)
+    Replace `YOUR_PROJECT_ID` and choose a `YOUR_REGION` (e.g., `us-central1`).
 
-The game server can be configured by setting the following environment variables before running `server.py`:
+    ```bash
+    gcloud run deploy position-combo \
+      --image gcr.io/YOUR_PROJECT_ID/position-combo \
+      --platform managed \
+      --region YOUR_REGION \
+      --session-affinity \
+      --allow-unauthenticated
+    ```
 
-- `HOST`: The hostname the WebSocket server should bind to. Defaults to `localhost`. For production, you would typically set this to `0.0.0.0`.
-- `PORT`: The port for the WebSocket server. Defaults to `8765`.
+3.  **Play Online**
+    After deployment is successful, the command will output a public **Service URL** (e.g., `https://position-combo-xxxxxxxx-uc.a.run.app`).
 
-**Example:**
-```bash
-export HOST=0.0.0.0
-export PORT=8000
-python3 server.py
-```
+    Simply navigate to this URL in two different browser tabs to play your production-level game! The frontend will automatically connect to the WebSocket on the same domain.

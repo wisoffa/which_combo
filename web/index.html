@@ -60,7 +60,9 @@
     <div id="status">Connecting to server...</div>
 
     <script>
-        const ws = new WebSocket("ws://localhost:8765");
+        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+        const wsURL = `${protocol}://${window.location.host}/ws`;
+        const ws = new WebSocket(wsURL);
         let myPlayerId = null;
         let gameState = {};
         let attackSelection = [];
