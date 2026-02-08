@@ -54,6 +54,12 @@ The application now runs as a single, unified server process and features a game
     - **To start a game:** Click "Create New Game". A new game room will be created, and your URL will change to include the room key (e.g., `.../static/index.html?room=ABCDE`).
     - **To join a game:** Copy the `ABCDE` room key from the first player's URL, paste it into the "Enter Room Key" field on the second player's lobby page, and click "Join Game".
 
+### Testing the Match Phase
+To quickly test the match phase without going through all 25 placement rounds, you can use the test mode:
+- On the lobby page, click the **Start Test Game** button.
+- This will create and join a special room named "TEST" where both players start immediately in the match phase with randomly generated boards.
+- To have a second player join the test game, have them also click "Start Test Game" or manually join the room with the key "TEST".
+
 ## Deployment to Google Cloud Run
 
 This guide explains how to deploy the game to Google Cloud Run, a fully managed, serverless platform.

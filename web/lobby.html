@@ -10,6 +10,8 @@
         h1 { margin-top: 0; color: #333; }
         .button { background-color: #007bff; color: white; padding: 12px 20px; border: none; border-radius: 5px; font-size: 1.2em; cursor: pointer; text-decoration: none; display: inline-block; margin-top: 10px; }
         .button:hover { background-color: #0056b3; }
+        .button.test-btn { background-color: #28a745; margin-left: 15px; }
+        .button.test-btn:hover { background-color: #218838; }
         .join-form { margin-top: 30px; }
         .join-form input { font-size: 1.2em; padding: 10px; border: 1px solid #ccc; border-radius: 5px; }
         .join-form .button { font-size: 1.2em; padding: 12px 20px; margin-left: 10px; }
@@ -20,6 +22,7 @@
         <h1>Position Combo</h1>
         <div>
             <button id="create-game-btn" class="button">Create New Game</button>
+            <button id="start-test-btn" class="button test-btn">Start Test Game</button>
         </div>
         <div class="join-form">
             <input type="text" id="room-key-input" placeholder="Enter Room Key">
@@ -35,6 +38,10 @@
         document.getElementById('create-game-btn').addEventListener('click', () => {
             const roomKey = generateRoomKey();
             window.location.href = `/static/index.html?room=${roomKey}`;
+        });
+
+        document.getElementById('start-test-btn').addEventListener('click', () => {
+            window.location.href = `/static/index.html?room=TEST`;
         });
 
         document.getElementById('join-game-btn').addEventListener('click', () => {

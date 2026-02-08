@@ -96,11 +96,12 @@ async def websocket_handler(request):
 
             # Find or create the room
             if room_key not in ROOMS:
+                is_test_mode = (room_key == "TEST")
                 ROOMS[room_key] = {
-                    "game": PositionComboGame(),
+                    "game": PositionComboGame(test_mode=is_test_mode),
                     "websockets": {}
                 }
-                print(f"New room created: {room_key}")
+                print(f"New room created: {room_key} (Test Mode: {is_test_mode})")
             
             room = ROOMS[room_key]
             
@@ -117,12 +118,16 @@ async def websocket_handler(request):
             room["websockets"][player_id] = ws
             print(f"[{room_key}] Player {player_id} connected.")
             await send_to_player(player_id, room_key, {"type": "welcome", "player_id": player_id})
-            await broadcast_gamestate(request.app, room_key)
             
-            # If room is now full, start the game
+            # If room is now full, start the game (or send gamestate if test mode)
             if len(room["websockets"]) == 2:
-                await handle_new_game(request.app, room_key)
+                if room["game"].phase == 'match': # Test mode starts in match phase
+                    await broadcast(request.app, room_key, {"type": "match_start", "message": "Test match started! Choose your first combination."})
+                else: # Normal mode
+                    await handle_new_game(request.app, room_key)
 
+            await broadcast_gamestate(request.app, room_key)
+        
         else:
             await ws.close(code=4001, message=b'First message must be a join action.')
             return
