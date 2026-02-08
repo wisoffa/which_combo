@@ -78,6 +78,7 @@ async def broadcast_gamestate(app):
 # --- aiohttp Request Handlers ---
 async def websocket_handler(request):
     """Handles new WebSocket connections."""
+    global game  # Declare global at the top of the function
     ws = web.WebSocketResponse()
     await ws.prepare(request)
     
@@ -124,12 +125,13 @@ async def websocket_handler(request):
         # Reset game if it's not full
         if not all(p is not None for p in player_websockets.values()):
              print("Resetting game due to disconnection.")
-             global game
              game = PositionComboGame()
 
     return ws
 
 # --- Application Setup ---
-app = web.Application()
-app.router.add_get('/ws', websocket_handler)
-app.router.add_static('/', path='./web/', name='static')
+def create_app(argv=None):
+    app = web.Application()
+    app.router.add_get('/ws', websocket_handler)
+    app.router.add_static('/', path='./web/', name='static', show_index=True)
+    return app
