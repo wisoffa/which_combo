@@ -41,16 +41,18 @@ The game consists of two phases: a synchronized **Placement Phase** and a simult
 
 ## Running for Development
 
-Because the development server is not unified, you need two terminals to run the game locally. For production, this is handled by a single server process.
+The application now runs as a single, unified server process and features a game lobby.
 
-1.  **Terminal 1: Start the Python Backend**
+1.  **Start the Server**
     Navigate to the `which_combo` directory and run:
     ```bash
-    python3 -m aiohttp.web -H localhost -P 8080 server:app
+    python3 -m aiohttp.web -H localhost -P 8080 server:create_app
     ```
 
 2.  **Play**
-    Open two browser tabs and navigate to `http://localhost:8080`. The application is now served from a single port.
+    - Open your browser and navigate to `http://localhost:8080`. You will be at the lobby.
+    - **To start a game:** Click "Create New Game". A new game room will be created, and your URL will change to include the room key (e.g., `.../static/index.html?room=ABCDE`).
+    - **To join a game:** Copy the `ABCDE` room key from the first player's URL, paste it into the "Enter Room Key" field on the second player's lobby page, and click "Join Game".
 
 ## Deployment to Google Cloud Run
 
@@ -68,7 +70,7 @@ This guide explains how to deploy the game to Google Cloud Run, a fully managed,
     Navigate to the `which_combo` directory. Run the following command to use Cloud Build to create your container image and push it to the Artifact Registry. Replace `YOUR_PROJECT_ID` with your actual GCP Project ID.
 
     ```bash
-    gcloud builds submit --tag gcr.io/YOUR_PROJECT_ID/position-combo
+    gcloud builds submit . --tag gcr.io/YOUR_PROJECT_ID/position-combo
     ```
 
 2.  **Deploy to Cloud Run**
@@ -86,6 +88,4 @@ This guide explains how to deploy the game to Google Cloud Run, a fully managed,
     ```
 
 3.  **Play Online**
-    After deployment is successful, the command will output a public **Service URL** (e.g., `https://position-combo-xxxxxxxx-uc.a.run.app`).
-
-    Simply navigate to this URL in two different browser tabs to play your production-level game! The frontend will automatically connect to the WebSocket on the same domain.
+    After deployment is successful, the command will output a public **Service URL**. Navigate to this URL to access the game lobby. Share a room key between two players to start a game.

@@ -1,131 +1,161 @@
 import asyncio
 import json
 import os
+import random
+import string
 from aiohttp import web
 from game import PositionComboGame
 
 # --- Application State ---
-game = PositionComboGame()
-clients = {}  # {websocket: player_id}
-player_websockets = {'player1': None, 'player2': None}
+# This will now hold all active game rooms
+ROOMS = {}
 
-# --- WebSocket Helper Functions ---
-async def broadcast(app, message):
-    """Sends a message to all connected clients."""
-    if clients:
-        await asyncio.gather(*[ws.send_json(message) for ws in clients])
+# --- WebSocket Helper Functions (now room-aware) ---
+async def broadcast(app, room_key, message):
+    """Sends a message to all connected clients in a specific room."""
+    if room_key in ROOMS and ROOMS[room_key]["websockets"]:
+        await asyncio.gather(*[ws.send_json(message) for ws in ROOMS[room_key]["websockets"].values()])
 
-async def send_to_player(player_id, message):
-    """Sends a message to a specific player."""
-    ws = player_websockets.get(player_id)
-    if ws:
-        await ws.send_json(message)
+async def send_to_player(player_id, room_key, message):
+    """Sends a message to a specific player in a specific room."""
+    if room_key in ROOMS:
+        ws = ROOMS[room_key]["websockets"].get(player_id)
+        if ws:
+            await ws.send_json(message)
 
-# --- Game Logic Message Handlers ---
-async def handle_new_game(app):
-    """Starts a new game and initiates the synchronized placement phase."""
-    global game
-    game = PositionComboGame()
-    print("New game started. Entering synchronized placement phase.")
-    await trigger_placement_turn(app)
+# --- Game Logic Message Handlers (now room-aware) ---
+async def handle_new_game(app, room_key):
+    game = ROOMS[room_key]["game"]
+    print(f"[{room_key}] New game started. Entering synchronized placement phase.")
+    await trigger_placement_turn(app, room_key)
 
-async def trigger_placement_turn(app):
+async def trigger_placement_turn(app, room_key):
+    game = ROOMS[room_key]["game"]
     if game.phase != 'placement': return
     current_number = game.placement_sequence[game.placement_step]
-    print(f"Triggering placement step {game.placement_step}, number: {current_number}")
-    await broadcast(app, {
-        "type": "new_placement_number",
-        "number": current_number,
-        "step": game.placement_step
+    print(f"[{room_key}] Triggering placement step {game.placement_step}, number: {current_number}")
+    await broadcast(app, room_key, {
+        "type": "new_placement_number", "number": current_number, "step": game.placement_step
     })
-    await broadcast_gamestate(app)
+    await broadcast_gamestate(app, room_key)
 
-async def handle_submit_placement(app, player_id, cell_id):
+async def handle_submit_placement(app, room_key, player_id, cell_id):
+    game = ROOMS[room_key]["game"]
     result = game.submit_placement(player_id, cell_id)
     if "error" in result:
-        await send_to_player(player_id, {"type": "error", "message": result["error"]})
+        await send_to_player(player_id, room_key, {"type": "error", "message": result["error"]})
         return
     
-    print(f"Player {player_id} placed number at {cell_id}.")
-    await broadcast_gamestate(app)
+    print(f"[{room_key}] Player {player_id} placed number at {cell_id}.")
+    await broadcast_gamestate(app, room_key)
 
     if result.get("status") == "next_placement_turn":
-        await trigger_placement_turn(app)
+        await trigger_placement_turn(app, room_key)
     elif result.get("status") == "match_started":
-        print("Boards complete. Starting match phase.")
-        await broadcast(app, {
-            "type": "match_start",
-            "message": "The match begins! Both players, choose your first combination."
-        })
+        print(f"[{room_key}] Boards complete. Starting match phase.")
+        await broadcast(app, room_key, {"type": "match_start", "message": "The match begins! Both players, choose your first combination."})
 
-async def handle_submit_combination(app, player_id, cells):
+async def handle_submit_combination(app, room_key, player_id, cells):
+    game = ROOMS[room_key]["game"]
     result = game.submit_combination(player_id, cells)
     if "error" in result:
-        await send_to_player(player_id, {"type": "error", "message": result["error"]})
+        await send_to_player(player_id, room_key, {"type": "error", "message": result["error"]})
         return
     
-    print(f"Player {player_id} submitted combination for round {game.match_round}.")
+    print(f"[{room_key}] Player {player_id} submitted combination for round {game.match_round}.")
     if result.get("status") == "round_resolved":
-        print("Both players have submitted. Resolving round.")
-        await broadcast(app, {"type": "round_result", "data": result})
+        print(f"[{room_key}] Both players submitted. Resolving round.")
+        await broadcast(app, room_key, {"type": "round_result", "data": result})
     
-    await broadcast_gamestate(app)
+    await broadcast_gamestate(app, room_key)
 
-async def broadcast_gamestate(app):
-    state = game.get_game_state()
-    await broadcast(app, {"type": "game_state", "data": state})
+async def broadcast_gamestate(app, room_key):
+    if room_key in ROOMS:
+        game = ROOMS[room_key]["game"]
+        state = game.get_game_state()
+        await broadcast(app, room_key, {"type": "game_state", "data": state})
 
 # --- aiohttp Request Handlers ---
 async def websocket_handler(request):
-    """Handles new WebSocket connections."""
-    global game  # Declare global at the top of the function
     ws = web.WebSocketResponse()
     await ws.prepare(request)
     
+    room_key = None
     player_id = None
+    
     try:
-        if player_websockets['player1'] is None:
-            player_id = 'player1'
-        elif player_websockets['player2'] is None:
-            player_id = 'player2'
+        # Step 1: Wait for the client to send a "join" message.
+        first_msg = await ws.receive_json()
+        action = first_msg.get("action")
+        
+        if action == "join":
+            room_key = first_msg.get("room_key")
+            if not room_key:
+                await ws.close(code=4000, message=b'Room key is required.')
+                return
+
+            # Find or create the room
+            if room_key not in ROOMS:
+                ROOMS[room_key] = {
+                    "game": PositionComboGame(),
+                    "websockets": {}
+                }
+                print(f"New room created: {room_key}")
+            
+            room = ROOMS[room_key]
+            
+            # Assign player ID
+            if 'player1' not in room["websockets"]:
+                player_id = 'player1'
+            elif 'player2' not in room["websockets"]:
+                player_id = 'player2'
+            else:
+                await ws.send_json({"type": "error", "message": "Game room is full."})
+                await ws.close()
+                return
+
+            room["websockets"][player_id] = ws
+            print(f"[{room_key}] Player {player_id} connected.")
+            await send_to_player(player_id, room_key, {"type": "welcome", "player_id": player_id})
+            await broadcast_gamestate(request.app, room_key)
+            
+            # If room is now full, start the game
+            if len(room["websockets"]) == 2:
+                await handle_new_game(request.app, room_key)
+
         else:
-            await ws.send_json({"type": "error", "message": "Game is full."})
-            await ws.close()
+            await ws.close(code=4001, message=b'First message must be a join action.')
             return
 
-        clients[ws] = player_id
-        player_websockets[player_id] = ws
-        print(f"Player {player_id} connected.")
-        await send_to_player(player_id, {"type": "welcome", "player_id": player_id})
-
-        if all(p is not None for p in player_websockets.values()):
-            await handle_new_game(request.app)
-
+        # Step 2: Main message loop for gameplay
         async for msg in ws:
             if msg.type == web.WSMsgType.TEXT:
                 data = json.loads(msg.data)
-                action = data.get('action')
+                game_action = data.get('action')
+                game = ROOMS[room_key]["game"]
 
-                if game.phase == 'placement' and action == 'submit_placement':
-                    await handle_submit_placement(request.app, player_id, data.get('cell_id'))
-                elif game.phase == 'match' and action == 'submit_combination':
-                    await handle_submit_combination(request.app, player_id, data.get('cells'))
+                if game.phase == 'placement' and game_action == 'submit_placement':
+                    await handle_submit_placement(request.app, room_key, player_id, data.get('cell_id'))
+                elif game.phase == 'match' and game_action == 'submit_combination':
+                    await handle_submit_combination(request.app, room_key, player_id, data.get('cells'))
             elif msg.type == web.WSMsgType.ERROR:
-                print(f"WebSocket connection closed with exception {ws.exception()}")
+                print(f"[{room_key}] WebSocket connection closed with exception {ws.exception()}")
 
     finally:
-        print(f"Player {player_id} disconnected.")
-        if ws in clients:
-            del clients[ws]
-        if player_id:
-            player_websockets[player_id] = None
-        if any(p is not None for p in player_websockets.values()):
-            await broadcast(request.app, {"type": "player_disconnected", "player_id": player_id})
-        
-        # Reset game if it's not full
-        if not all(p is not None for p in player_websockets.values()):
-             print("Resetting game due to disconnection.")
-             game = PositionComboGame()
+        # Step 3: Cleanup on disconnection
+        if room_key and player_id:
+            print(f"[{room_key}] Player {player_id} disconnected.")
+            room = ROOMS.get(room_key)
+            if room and player_id in room["websockets"]:
+                del room["websockets"][player_id]
+                
+                # If room is now empty, delete it
+                if not room["websockets"]:
+                    print(f"Room {room_key} is empty, deleting.")
+                    del ROOMS[room_key]
+                else:
+                    # Notify remaining player
+                    await broadcast(request.app, room_key, {"type": "player_disconnected", "player_id": player_id})
 
     return ws
 
@@ -133,5 +163,7 @@ async def websocket_handler(request):
 def create_app(argv=None):
     app = web.Application()
     app.router.add_get('/ws', websocket_handler)
-    app.router.add_static('/', path='./web/', name='static', show_index=True)
+    # Serve lobby.html at the root, and other files like index.html from the web dir
+    app.router.add_get('/', lambda request: web.FileResponse('./web/lobby.html'))
+    app.router.add_static('/static/', path='./web/', name='static')
     return app

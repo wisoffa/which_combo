@@ -60,6 +60,12 @@
     <div id="status">Connecting to server...</div>
 
     <script>
+        const roomKey = new URLSearchParams(window.location.search).get('room');
+        if (!roomKey) {
+            alert('No room key found. Redirecting to lobby.');
+            window.location.href = '/';
+        }
+
         const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
         const wsURL = `${protocol}://${window.location.host}/ws`;
         const ws = new WebSocket(wsURL);
@@ -77,7 +83,10 @@
             playerBoardContainer: document.getElementById('player-board-container'),
         };
 
-        ws.onopen = () => DOMElements.status.textContent = "Waiting for another player...";
+        ws.onopen = () => {
+            DOMElements.status.textContent = "Connecting to room...";
+            ws.send(JSON.stringify({ action: "join", room_key: roomKey }));
+        };
         ws.onclose = () => DOMElements.status.textContent = "Disconnected. Refresh to rejoin.";
         ws.onmessage = (event) => {
             const msg = JSON.parse(event.data);

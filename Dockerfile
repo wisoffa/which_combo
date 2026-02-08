@@ -19,4 +19,4 @@ EXPOSE 8080
 # Command to run the application using a production-grade server.
 # Gunicorn is a process manager, and it will use Uvicorn workers for ASGI.
 # It listens on all interfaces (0.0.0.0) on the port specified by the PORT env var.
-CMD ["gunicorn", "-w", "2", "-k", "aiohttp.worker.GunicornWebWorker", "--bind", "0.0.0.0:$PORT", "server:create_app()"]
+CMD gunicorn -w 2 -k aiohttp.worker.GunicornWebWorker --bind "0.0.0.0:$PORT" "server:create_app()"
