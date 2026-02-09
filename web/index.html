@@ -34,9 +34,9 @@
                 <h3>My Board</h3>
                 <div id="player-board" class="grid-container"></div>
             </div>
-            <div id="attack-board-container" class="hidden">
-                <h3>Attack Board</h3>
-                <div id="attack-board" class="grid-container"></div>
+            <div id="opponent-board-container">
+                <h3 id="opponent-board-title">Opponent's Board</h3>
+                <div id="opponent-board" class="grid-container"></div>
             </div>
         </div>
         <div id="info-panel">
@@ -76,9 +76,10 @@
         const DOMElements = {
             status: document.getElementById('status'),
             playerBoard: document.getElementById('player-board'),
-            attackBoard: document.getElementById('attack-board'),
+            opponentBoard: document.getElementById('opponent-board'),
             placementSection: document.getElementById('placement-section'),
-            attackBoardContainer: document.getElementById('attack-board-container'),
+            opponentBoardContainer: document.getElementById('opponent-board-container'),
+            opponentBoardTitle: document.getElementById('opponent-board-title'),
             currentNumberDisplay: document.getElementById('current-number-display'),
             playerBoardContainer: document.getElementById('player-board-container'),
         };
@@ -121,8 +122,7 @@
             }
 
             if (attackSelection.length === 4) {
-                const confirmed = window.confirm(`Submit this combination?
-${attackSelection.join(', ')}`);
+                const confirmed = window.confirm(`Submit this combination?\n${attackSelection.join(', ')}`);
                 if (confirmed) {
                     ws.send(JSON.stringify({ action: 'submit_combination', cells: attackSelection }));
                 }
@@ -135,18 +135,22 @@ ${attackSelection.join(', ')}`);
             const p1Result = data.results.find(r => r.player === 'player1');
             const p2Result = data.results.find(r => r.player === 'player2');
             let resultText = `<strong>Round ${gameState.match_info.round} Results:</strong><br>`;
-            resultText += `Player 1: ${p1Result.hand} (${p1Result.rank} rank). Points gained: ${p1Result.points_gained_this_round}<br>`;
-            resultText += `Player 2: ${p2Result.hand} (${p2Result.rank} rank). Points gained: ${p2Result.points_gained_this_round}<br>`;
+            resultText += `Player 1: ${p1Result.hand}. Points: ${p1Result.points_gained_this_round}<br>`;
+            resultText += `Player 2: ${p2Result.hand}. Points: ${p2Result.points_gained_this_round}<br>`;
             DOMElements.status.innerHTML = resultText;
         }
 
         function updateUI() {
             if (!myPlayerId || !gameState.phase) return;
 
-            // Phase-specific UI updates
+            const opponentId = myPlayerId === 'player1' ? 'player2' : 'player1';
+
             if (gameState.phase === 'placement') {
                 document.body.style.backgroundColor = '#e9f5ff';
+                DOMElements.opponentBoardContainer.classList.remove('hidden');
                 renderBoard(DOMElements.playerBoard, gameState.boards[myPlayerId]);
+                renderBoard(DOMElements.opponentBoard, gameState.boards[opponentId]);
+
                 const placementInfo = gameState.placement_info;
                 DOMElements.status.textContent = `Placement Round ${placementInfo.step + 1}/25. Place: ${placementInfo.current_number}`;
                 if (placementInfo.placements_this_step[myPlayerId]) {
@@ -155,11 +159,19 @@ ${attackSelection.join(', ')}`);
             } else if (gameState.phase === 'match') {
                 document.body.style.backgroundColor = '#f0f2f5';
                 DOMElements.placementSection.classList.add('hidden');
-                DOMElements.attackBoardContainer.classList.remove('hidden');
-                DOMElements.playerBoardContainer.classList.add('hidden'); // Hide own board after placement
+                DOMElements.opponentBoardContainer.classList.remove('hidden');
+                DOMElements.opponentBoardTitle.textContent = "Attack Board";
+
+                if (gameState.is_test_mode) {
+                    DOMElements.playerBoardContainer.classList.remove('hidden');
+                    renderBoard(DOMElements.playerBoard, gameState.boards[myPlayerId]);
+                    renderBoard(DOMElements.opponentBoard, gameState.boards[opponentId]);
+                } else {
+                    DOMElements.playerBoardContainer.classList.add('hidden');
+                    renderBoard(DOMElements.opponentBoard, {}); // Keep attack board blank
+                }
 
                 const matchInfo = gameState.match_info;
-                // Don't overwrite a round result immediately
                 if (!DOMElements.status.innerHTML.includes('Round')) {
                     if (gameState.game_over) {
                         DOMElements.status.innerHTML = `<strong>Game Over!</strong><br>${gameState.winner === 'draw' ? "It's a draw!" : `${gameState.winner} wins!`}`;
@@ -172,7 +184,6 @@ ${attackSelection.join(', ')}`);
                 }
             }
             
-            // Generic updates
             ['player1', 'player2'].forEach(pId => {
                 document.getElementById(`${pId}-score`).textContent = gameState.players[pId].score;
                 const dot = document.getElementById(`${pId === 'player1' ? 'p1' : 'p2'}-status-dot`);
@@ -186,7 +197,7 @@ ${attackSelection.join(', ')}`);
         function renderBoard(boardEl, boardData) {
             boardEl.querySelectorAll('.cell').forEach(cell => {
                 const cellId = cell.dataset.cellId;
-                if (boardData && boardData[cellId]) {
+                if (boardData && boardData[cellId] !== undefined) {
                     cell.textContent = boardData[cellId];
                     cell.classList.add('filled');
                 } else {
@@ -201,13 +212,11 @@ ${attackSelection.join(', ')}`);
             for (let r = 1; r <= 5; r++) {
                 for (const c of cols) {
                     const cellId = `${c}${r}`;
-                    // Player's personal board (for placement)
                     const pCell = document.createElement('div');
                     pCell.className = 'cell';
                     pCell.dataset.cellId = cellId;
                     pCell.onclick = () => handlePlacementCellClick(pCell);
                     DOMElements.playerBoard.appendChild(pCell);
-                    // Attack board
                     const aCell = document.createElement('div');
                     aCell.className = 'cell';
                     aCell.dataset.cellId = cellId;
