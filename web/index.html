@@ -76,13 +76,16 @@
         const DOMElements = {
             status: document.getElementById('status'),
             playerBoard: document.getElementById('player-board'),
-            opponentBoard: document.getElementById('opponent-board'),
+            attackBoard: document.getElementById('attack-board'),
             placementSection: document.getElementById('placement-section'),
             opponentBoardContainer: document.getElementById('opponent-board-container'),
             opponentBoardTitle: document.getElementById('opponent-board-title'),
             currentNumberDisplay: document.getElementById('current-number-display'),
             playerBoardContainer: document.getElementById('player-board-container'),
         };
+
+        let prevGameState = null; // To track previous state for change detection
+        let statusMessageTimeout = null; // To manage temporary status messages
 
         ws.onopen = () => {
             DOMElements.status.textContent = "Connecting to room...";
@@ -140,7 +143,32 @@
             DOMElements.status.innerHTML = resultText;
         }
 
-        function updateUI() {
+        function detectAndNotifyPlacement(opponentId) {
+            if (!prevGameState || !prevGameState.boards[opponentId] || !gameState.boards[opponentId]) return;
+
+            const prevOpponentBoardKeys = Object.keys(prevGameState.boards[opponentId]);
+            const currentOpponentBoardKeys = Object.keys(gameState.boards[opponentId]);
+
+            if (currentOpponentBoardKeys.length > prevOpponentBoardKeys.length) {
+                const newCellId = currentOpponentBoardKeys.find(key => !prevOpponentBoardKeys.includes(key));
+                if (newCellId) {
+                    const placedNumber = gameState.boards[opponentId][newCellId];
+                    const notificationMessage = `Opponent placed ${placedNumber} in ${newCellId.toUpperCase()}!`;
+                    DOMElements.status.textContent = notificationMessage;
+                    
+                    // Clear any previous timeout
+                    if (statusMessageTimeout) clearTimeout(statusMessageTimeout);
+
+                    // Set timeout to revert status after 3 seconds
+                    statusMessageTimeout = setTimeout(() => {
+                        updateUI(false); // Call updateUI to refresh status without triggering notification again
+                        statusMessageTimeout = null;
+                    }, 3000);
+                }
+            }
+        }
+
+        function updateUI(notifyPlacement = true) {
             if (!myPlayerId || !gameState.phase) return;
 
             const opponentId = myPlayerId === 'player1' ? 'player2' : 'player1';
@@ -152,9 +180,17 @@
                 renderBoard(DOMElements.opponentBoard, gameState.boards[opponentId]);
 
                 const placementInfo = gameState.placement_info;
-                DOMElements.status.textContent = `Placement Round ${placementInfo.step + 1}/25. Place: ${placementInfo.current_number}`;
-                if (placementInfo.placements_this_step[myPlayerId]) {
-                    DOMElements.status.textContent = 'Waiting for opponent to place...';
+                // Only show placement notification if it was just detected and notifyPlacement is true
+                if (notifyPlacement) {
+                    detectAndNotifyPlacement(opponentId);
+                }
+
+                // Revert status message if timeout cleared it or no new notification
+                if (!statusMessageTimeout) {
+                    DOMElements.status.textContent = `Placement Round ${placementInfo.step + 1}/25. Place: ${placementInfo.current_number}`;
+                    if (placementInfo.placements_this_step[myPlayerId]) {
+                        DOMElements.status.textContent = 'Waiting for opponent to place...';
+                    }
                 }
             } else if (gameState.phase === 'match') {
                 document.body.style.backgroundColor = '#f0f2f5';
@@ -192,6 +228,8 @@
                 if(gameState.phase === 'match' && gameState.match_info) isReady = gameState.match_info.submissions[pId];
                 dot.classList.toggle('ready', isReady);
             });
+
+            prevGameState = JSON.parse(JSON.stringify(gameState)); // Store current state for next update
         }
         
         function renderBoard(boardEl, boardData) {
@@ -227,6 +265,3 @@
         }
 
         createGrids();
-    </script>
-</body>
-</html>

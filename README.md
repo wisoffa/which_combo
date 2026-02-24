@@ -11,6 +11,7 @@ The game consists of two phases: a synchronized **Placement Phase** and a simult
 - Both players must choose an empty cell on their own 5x5 grid to place the number.
 - Once both players have placed the number, the next random number is revealed.
 - This continues for 25 rounds until both players' boards are completely filled.
+- **New Feature: Placement Notification**: When your opponent places a number, you will receive a temporary on-screen notification (e.g., "Opponent placed 5 in C3!") to keep you informed of their moves.
 
 ### 2. Match Phase
 - After placement, both players' boards are hidden, even from themselves. The game becomes a test of memory.
