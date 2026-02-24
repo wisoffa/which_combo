@@ -2,6 +2,15 @@
 
 Position Combo is a 1v1, web-based memory and strategy board game.
 
+## Features
+- **Real-time Online Multiplayer**: Play with a friend in real-time over the web.
+- **Lobby System**: Create a private game room with a unique key or join a friend's game.
+- **Synchronized Gameplay**: Features a turn-based placement phase and simultaneous-submission match rounds.
+- **Memory & Strategy**: Boards are hidden after placement, forcing players to rely on memory to score points on their own board.
+- **Detailed Scoring**: A full hand-ranking and tie-breaking system determines the winner of each round.
+- **Test Mode**: A special "TEST" room allows players to bypass the placement phase to quickly debug and test the match phase.
+- **Responsive UI**: The user interface adapts to both desktop and mobile screen sizes for a seamless experience.
+
 ## Game Rules
 
 The game consists of two phases: a synchronized **Placement Phase** and a simultaneous-submission **Match Phase**.

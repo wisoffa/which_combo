@@ -5,25 +5,97 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Position Combo</title>
     <style>
-        :root { --cell-size: 50px; --grid-gap: 4px; }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; display: flex; flex-direction: column; align-items: center; margin: 0; background-color: #f0f2f5; padding-top: 20px; transition: background-color 0.5s; }
-        h1, h3 { margin: 0 0 15px 0; }
-        #main-container { display: flex; gap: 30px; align-items: flex-start; }
-        .grid-container { display: grid; grid-template-columns: repeat(5, var(--cell-size)); gap: var(--grid-gap); border: 2px solid #333; padding: var(--grid-gap); background-color: #ddd; }
-        .cell { width: var(--cell-size); height: var(--cell-size); display: flex; justify-content: center; align-items: center; font-size: 1.5em; font-weight: bold; background-color: #fff; user-select: none; transition: background-color 0.2s, transform 0.2s; border: 1px solid #ccc; }
+        :root {
+            --grid-width: 90vw;
+            --grid-gap: 4px;
+        }
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+        }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            background-color: #f0f2f5; 
+            padding: 20px 10px;
+            box-sizing: border-box;
+            transition: background-color 0.5s; 
+        }
+        h1 { margin-bottom: 20px; }
+        h3 { margin: 10px 0; }
+        #main-container { 
+            display: flex; 
+            flex-direction: column;
+            gap: 30px; 
+            align-items: center; 
+            width: 100%;
+        }
+        .boards-container { 
+            display: flex; 
+            flex-direction: column;
+            align-items: center;
+            gap: 30px; 
+            width: 100%;
+        }
+        .board-wrapper { text-align: center; }
+        .grid-container { 
+            display: grid; 
+            width: var(--grid-width);
+            max-width: 400px;
+            grid-template-columns: repeat(5, 1fr); 
+            gap: var(--grid-gap); 
+            border: 2px solid #333; 
+            padding: var(--grid-gap); 
+            background-color: #ddd; 
+        }
+        .cell { 
+            width: 100%;
+            aspect-ratio: 1 / 1; /* Make cells square */
+            display: flex; 
+            justify-content: center; 
+            align-items: center; 
+            font-size: clamp(1rem, 4vw, 1.5rem);
+            font-weight: bold; 
+            background-color: #fff; 
+            user-select: none; 
+            transition: background-color 0.2s, transform 0.2s; 
+            border: 1px solid #ccc;
+        }
         #player-board .cell:not(.filled) { cursor: pointer; }
         #player-board .cell:not(.filled):hover { background-color: #e9f5ff; }
         #attack-board .cell { cursor: pointer; }
         #attack-board .cell.selected { background-color: #a7d7f9; transform: scale(0.9); }
-        #info-panel { width: 280px; }
+        #info-panel { 
+            width: var(--grid-width);
+            max-width: 400px;
+        }
         .player-info { padding: 15px; border: 1px solid #ccc; border-radius: 8px; background-color: #fff; margin-bottom: 10px; }
         .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background-color: #ccc; margin-left: 8px; transition: background-color 0.5s; }
         .status-dot.ready { background-color: #28a745; }
-        #status { margin-top: 20px; font-size: 1.2em; font-weight: bold; color: #333; text-align: center; min-height: 50px; }
+        #status { margin-top: 20px; font-size: 1.2em; font-weight: bold; color: #333; text-align: center; min-height: 50px; width: 90%; }
         #placement-section { text-align: center; padding: 15px; background: #e9ecef; border-radius: 8px; }
         #current-number-display { font-size: 2.5em; font-weight: bold; color: #007bff; }
         .hidden { display: none; }
-        .boards-container { display: flex; gap: 30px; }
+
+        /* Styles for larger screens */
+        @media (min-width: 800px) {
+            :root {
+                --grid-width: 300px;
+            }
+            #main-container {
+                flex-direction: row;
+                align-items: flex-start;
+            }
+            .boards-container {
+                flex-direction: row;
+            }
+            #info-panel {
+                width: 280px;
+            }
+        }
     </style>
 </head>
 <body>
