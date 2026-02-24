@@ -138,12 +138,10 @@
             window.location.href = '/';
         }
 
-        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-        const wsURL = `${protocol}://${window.location.host}/ws`;
-        const ws = new WebSocket(wsURL);
         let myPlayerId = null;
         let gameState = {};
         let attackSelection = [];
+        let ws = null;
 
         const DOMElements = {
             status: document.getElementById('status'),
@@ -156,26 +154,44 @@
             playerBoardContainer: document.getElementById('player-board-container'),
         };
 
-        let prevGameState = null; // To track previous state for change detection
-        let statusMessageTimeout = null; // To manage temporary status messages
+        let prevGameState = null; 
+        let statusMessageTimeout = null;
 
-        ws.onopen = () => {
-            DOMElements.status.textContent = "Connecting to room...";
-            ws.send(JSON.stringify({ action: "join", room_key: roomKey }));
-        };
-        ws.onclose = () => DOMElements.status.textContent = "Disconnected. Refresh to rejoin.";
-        ws.onmessage = (event) => {
-            const msg = JSON.parse(event.data);
-            console.log("Received:", msg);
-            switch (msg.type) {
-                case "welcome": myPlayerId = msg.player_id; break;
-                case "new_placement_number": DOMElements.currentNumberDisplay.textContent = msg.number; break;
-                case "game_state": gameState = msg.data; updateUI(); break;
-                case "match_start": DOMElements.status.textContent = msg.message; break;
-                case "round_result": handleRoundResult(msg.data); break;
-                case "error": alert(`Error: ${msg.message}`); break;
-            }
-        };
+        function connect() {
+            const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+            const wsURL = `${protocol}://${window.location.host}/ws`;
+            ws = new WebSocket(wsURL);
+
+            ws.onopen = () => {
+                DOMElements.status.textContent = "Connecting to room...";
+                ws.send(JSON.stringify({ action: "join", room_key: roomKey }));
+            };
+
+            ws.onclose = () => {
+                DOMElements.status.textContent = "Connection lost. Attempting to reconnect in 3 seconds...";
+                setTimeout(connect, 3000); // Try to reconnect after 3 seconds
+            };
+
+            ws.onmessage = (event) => {
+                const msg = JSON.parse(event.data);
+                console.log("Received:", msg);
+                switch (msg.type) {
+                    case "welcome": myPlayerId = msg.player_id; break;
+                    case "new_placement_number": DOMElements.currentNumberDisplay.textContent = msg.number; break;
+                    case "game_state": gameState = msg.data; updateUI(); break;
+                    case "match_start": DOMElements.status.textContent = msg.message; break;
+                    case "round_result": handleRoundResult(msg.data); break;
+                    case "player_disconnected": DOMElements.status.textContent = `Player ${msg.player_id} disconnected. Waiting for them to reconnect...`; break;
+                    case "player_reconnected": DOMElements.status.textContent = `Player ${msg.player_id} has reconnected!`; break;
+                    case "error": 
+                        alert(`Error: ${msg.message}`);
+                        if (msg.message.includes("full")) {
+                            window.location.href = '/'; // Redirect to lobby if room is full
+                        }
+                        break;
+                }
+            };
+        }
 
         function handlePlacementCellClick(cellEl) {
             if (gameState.phase !== 'placement' || cellEl.classList.contains('filled') || gameState.placement_info.placements_this_step[myPlayerId]) return;
@@ -216,7 +232,8 @@
         }
 
         function detectAndNotifyPlacement(opponentId) {
-            if (!prevGameState || !prevGameState.boards[opponentId] || !gameState.boards[opponentId]) return;
+            if (!prevGameState || !prevGameState.boards || !gameState.boards) return;
+            if (!prevGameState.boards[opponentId] || !gameState.boards[opponentId]) return;
 
             const prevOpponentBoardKeys = Object.keys(prevGameState.boards[opponentId]);
             const currentOpponentBoardKeys = Object.keys(gameState.boards[opponentId]);
@@ -228,12 +245,10 @@
                     const notificationMessage = `Opponent placed ${placedNumber} in ${newCellId.toUpperCase()}!`;
                     DOMElements.status.textContent = notificationMessage;
                     
-                    // Clear any previous timeout
                     if (statusMessageTimeout) clearTimeout(statusMessageTimeout);
 
-                    // Set timeout to revert status after 3 seconds
                     statusMessageTimeout = setTimeout(() => {
-                        updateUI(false); // Call updateUI to refresh status without triggering notification again
+                        updateUI(false); 
                         statusMessageTimeout = null;
                     }, 3000);
                 }
@@ -252,12 +267,10 @@
                 renderBoard(DOMElements.opponentBoard, gameState.boards[opponentId]);
 
                 const placementInfo = gameState.placement_info;
-                // Only show placement notification if it was just detected and notifyPlacement is true
                 if (notifyPlacement) {
                     detectAndNotifyPlacement(opponentId);
                 }
 
-                // Revert status message if timeout cleared it or no new notification
                 if (!statusMessageTimeout) {
                     DOMElements.status.textContent = `Placement Round ${placementInfo.step + 1}/25. Place: ${placementInfo.current_number}`;
                     if (placementInfo.placements_this_step[myPlayerId]) {
@@ -276,7 +289,7 @@
                     renderBoard(DOMElements.opponentBoard, gameState.boards[opponentId]);
                 } else {
                     DOMElements.playerBoardContainer.classList.add('hidden');
-                    renderBoard(DOMElements.opponentBoard, {}); // Keep attack board blank
+                    renderBoard(DOMElements.opponentBoard, {});
                 }
 
                 const matchInfo = gameState.match_info;
@@ -301,7 +314,7 @@
                 dot.classList.toggle('ready', isReady);
             });
 
-            prevGameState = JSON.parse(JSON.stringify(gameState)); // Store current state for next update
+            prevGameState = JSON.parse(JSON.stringify(gameState));
         }
         
         function renderBoard(boardEl, boardData) {
@@ -336,4 +349,7 @@
             }
         }
 
+        // --- Initial Setup ---
         createGrids();
+        connect(); // Start the initial connection
+    </script>

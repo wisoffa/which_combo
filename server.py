@@ -105,26 +105,34 @@ async def websocket_handler(request):
             
             room = ROOMS[room_key]
             
-            # Assign player ID
-            if 'player1' not in room["websockets"]:
+            # Assign player ID or handle reconnection
+            if room["websockets"].get('player1') is None:
                 player_id = 'player1'
-            elif 'player2' not in room["websockets"]:
+            elif room["websockets"].get('player2') is None:
                 player_id = 'player2'
             else:
                 await ws.send_json({"type": "error", "message": "Game room is full."})
                 await ws.close()
                 return
 
+            is_reconnection = player_id in room["websockets"]
             room["websockets"][player_id] = ws
-            print(f"[{room_key}] Player {player_id} connected.")
+            print(f"[{room_key}] Player {player_id} {'re' if is_reconnection else ''}connected.")
+            
             await send_to_player(player_id, room_key, {"type": "welcome", "player_id": player_id})
             
-            # If room is now full, start the game (or send gamestate if test mode)
-            if len(room["websockets"]) == 2:
-                if room["game"].phase == 'match': # Test mode starts in match phase
-                    await broadcast(request.app, room_key, {"type": "match_start", "message": "Test match started! Choose your first combination."})
-                else: # Normal mode
-                    await handle_new_game(request.app, room_key)
+            # If both players are now connected (and not None)
+            if all(room["websockets"].values()):
+                if is_reconnection:
+                    # On reconnect, just send the latest state
+                    print(f"[{room_key}] Player {player_id} reconnected. Notifying players.")
+                    await broadcast(request.app, room_key, {"type": "player_reconnected", "player_id": player_id})
+                elif len(room["websockets"]) == 2:
+                    # This is a new game getting its second player
+                    if room["game"].phase == 'match': # Test mode
+                        await broadcast(request.app, room_key, {"type": "match_start", "message": "Test match started! Choose your first combination."})
+                    else: # Normal mode
+                        await handle_new_game(request.app, room_key)
 
             await broadcast_gamestate(request.app, room_key)
         
@@ -137,6 +145,9 @@ async def websocket_handler(request):
             if msg.type == web.WSMsgType.TEXT:
                 data = json.loads(msg.data)
                 game_action = data.get('action')
+                
+                # Ensure game exists and player is in a room before processing actions
+                if room_key not in ROOMS: break
                 game = ROOMS[room_key]["game"]
 
                 if game.phase == 'placement' and game_action == 'submit_placement':
@@ -152,15 +163,16 @@ async def websocket_handler(request):
             print(f"[{room_key}] Player {player_id} disconnected.")
             room = ROOMS.get(room_key)
             if room and player_id in room["websockets"]:
-                del room["websockets"][player_id]
+                # Set player's websocket to None instead of deleting, to allow reconnection
+                room["websockets"][player_id] = None
                 
-                # If room is now empty, delete it
-                if not room["websockets"]:
+                # If room still has an active player, notify them.
+                if any(room["websockets"].values()):
+                    await broadcast(request.app, room_key, {"type": "player_disconnected", "player_id": player_id})
+                else:
+                    # If all players have disconnected (all values are None), delete the room
                     print(f"Room {room_key} is empty, deleting.")
                     del ROOMS[room_key]
-                else:
-                    # Notify remaining player
-                    await broadcast(request.app, room_key, {"type": "player_disconnected", "player_id": player_id})
 
     return ws
 
